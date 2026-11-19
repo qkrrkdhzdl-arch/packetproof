@@ -1,2 +1,5 @@
 Thumbs.db
 .DS_Store
+tools/out/
+tools/audio/
+__pycache__/
