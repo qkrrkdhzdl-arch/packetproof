@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run web/tests.html in a real browser and print the results.
+"""Run docs/tests.html in a real browser and print the results.
 
     python3 tools/run_tests.py
 
@@ -16,7 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB = ROOT / "web"
+WEB = ROOT / "docs"
 PORT = 8771
 
 

@@ -15,7 +15,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB = ROOT / "web"
+WEB = ROOT / "docs"
 SHOTS = ROOT / "docs" / "shots"
 PORT = 8772
 CHROME = "/workspace/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome"

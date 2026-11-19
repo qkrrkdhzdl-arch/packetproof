@@ -46,14 +46,14 @@ That is a design decision, not a limitation: the most sensitive file you own is 
 
 Vanilla ES modules, no build step, no dependencies. The interesting parts:
 
-- **`web/lib/zip.js`** — a ZIP reader that walks the *central directory* rather than the local headers, so archives from macOS, Windows Explorer, 7-Zip and JSZip all parse the same way, including entries written with data descriptors. Stored entries are sliced; deflated entries go through `DecompressionStream("deflate-raw")`, which means no third-party inflate code ships and the browser's own (fast, native) decompressor does the work. A small writer is included so the test fixtures and the sample packet can be built in memory.
-- **`web/lib/textract.js`** — text from the formats people really attach. Office and Hangul formats are ZIP+XML, so the same reader is reused and only the parts that hold words are read (`word/document.xml`, `xl/sharedStrings.xml`, `ppt/slides/*.xml`, `Contents/section*.xml`). PDFs are the hard case: every stream is inflated, text-showing operators (`Tj`, `TJ`, `'`, `"`) are parsed, escapes are decoded, and UTF-8 byte strings are re-decoded — with a `partial` flag so the UI can say "I only read part of this".
-- **`web/lib/scan.js`** — validators, not vibes. A 13-digit number is only reported as a resident registration number when the weighted check digit matches *and* the birth date is real; a card number only when it passes Luhn. Placeholders are matched by shape. Values are masked before they are ever rendered.
-- **`web/lib/rules.js`** — the packet engine: keyword/ext matching, per-item and whole-packet limits, duplicate bytes by hash, competing versions of one document, filename hygiene. Every finding names the file and the reason, because the point is that you can argue with it.
-- **`web/lib/manifest.js`** — the schema (`packetproof/1`) and the diff, including rename detection (same bytes, new name is a rename, not a delete plus an add).
+- **`docs/lib/zip.js`** — a ZIP reader that walks the *central directory* rather than the local headers, so archives from macOS, Windows Explorer, 7-Zip and JSZip all parse the same way, including entries written with data descriptors. Stored entries are sliced; deflated entries go through `DecompressionStream("deflate-raw")`, which means no third-party inflate code ships and the browser's own (fast, native) decompressor does the work. A small writer is included so the test fixtures and the sample packet can be built in memory.
+- **`docs/lib/textract.js`** — text from the formats people really attach. Office and Hangul formats are ZIP+XML, so the same reader is reused and only the parts that hold words are read (`word/document.xml`, `xl/sharedStrings.xml`, `ppt/slides/*.xml`, `Contents/section*.xml`). PDFs are the hard case: every stream is inflated, text-showing operators (`Tj`, `TJ`, `'`, `"`) are parsed, escapes are decoded, and UTF-8 byte strings are re-decoded — with a `partial` flag so the UI can say "I only read part of this".
+- **`docs/lib/scan.js`** — validators, not vibes. A 13-digit number is only reported as a resident registration number when the weighted check digit matches *and* the birth date is real; a card number only when it passes Luhn. Placeholders are matched by shape. Values are masked before they are ever rendered.
+- **`docs/lib/rules.js`** — the packet engine: keyword/ext matching, per-item and whole-packet limits, duplicate bytes by hash, competing versions of one document, filename hygiene. Every finding names the file and the reason, because the point is that you can argue with it.
+- **`docs/lib/manifest.js`** — the schema (`packetproof/1`) and the diff, including rename detection (same bytes, new name is a rename, not a delete plus an add).
 
 ```
-web/
+docs/          (published by GitHub Pages)
   index.html   the page
   app.js       state, rendering, drop handling
   lib/zip.js       read/write ZIP
@@ -72,7 +72,7 @@ tools/
 
 ```bash
 # any static server works; there is no build step
-python3 -m http.server 8080 --directory web
+python3 -m http.server 8080 --directory docs
 # then open http://localhost:8080/
 ```
 
@@ -97,6 +97,6 @@ python3 tools/smoke.py         # UI path + screenshots + "no offsite requests" c
 
 MIT — see [LICENSE](LICENSE).
 
-Built for **GenHacks 2026** (submissions close 2026-12-26). Sample documents in `lib/samples.js` are generated fixtures; the names and numbers in them are not real people.
+Built for **GenHacks 2026** (submissions close 2026-12-26). Sample documents in `docs/lib/samples.js` are generated fixtures; the names and numbers in them are not real people.
 
 **Tools used:** written in plain JavaScript; no framework, no library beyond the browser platform. An AI coding assistant was used while writing and reviewing the code — every finding above was verified by running the test suite and the page, and the numbers in this README come from those runs.
