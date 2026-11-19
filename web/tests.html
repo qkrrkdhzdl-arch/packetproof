@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Packetproof · tests</title>
+<style>
+  body { font: 14px/1.5 ui-monospace, monospace; background: #f4f1ea; color: #1d1b17; margin: 0; padding: 24px 28px 60px; }
+  h1 { font-size: 18px; letter-spacing: .06em; text-transform: uppercase; }
+  .summary { padding: 10px 14px; border-radius: 4px; margin: 12px 0 18px; font-weight: 600; }
+  .ok { background: #e2efe7; color: #1f5d43; }
+  .fail { background: #f6e4e0; color: #a33223; }
+  li { margin: 3px 0; }
+  .pass::marker { content: "✓  "; color: #1f5d43; }
+  .fail-item::marker { content: "✗  "; color: #a33223; }
+  ul { list-style: none; padding: 0; }
+  li::before { display: inline-block; width: 1.4em; }
+  li.pass::before { content: "✓"; color: #1f5d43; }
+  li.fail-item::before { content: "✗"; color: #a33223; }
+  pre { background: #fff; border: 1px solid #d8d1c4; padding: 10px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>Packetproof test suite</h1>
+<div id="summary" class="summary">running…</div>
+<ul id="list"></ul>
+<pre id="detail"></pre>
+<script type="module" src="tests.js"></script>
+</body>
+</html>
