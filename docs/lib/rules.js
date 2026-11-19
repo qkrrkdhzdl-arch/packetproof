@@ -3,8 +3,9 @@
  *
  * A checklist item is matched to files by keyword (Korean or English) and by
  * extension, so "재학증명서_20261120.pdf" satisfies an item labelled
- * "Proof of enrollment". Everything the engine reports comes with the file and
- * the reason, because the point of the tool is that you can argue with it.
+ * "Proof of enrollment". The engine reports a code and its parameters rather
+ * than a finished sentence: the same finding can then be read in English or
+ * Korean, and the wording can change without touching the checks.
  */
 
 export const MB = 1024 * 1024;
@@ -37,7 +38,7 @@ export function evaluatePacket({ files, checklist, limits = {} }) {
   const matches = {};
   const used = new Set();
 
-  const add = (severity, code, file, message) => findings.push({ severity, code, file, message });
+  const add = (severity, code, file, params = {}) => findings.push({ severity, code, file, params });
 
   // --- 1. Match files to checklist items -----------------------------------
   const scored = [];
@@ -67,10 +68,7 @@ export function evaluatePacket({ files, checklist, limits = {} }) {
   for (const item of checklist) {
     if (!item.required) continue;
     if (!used.has(item.label)) {
-      const hint = nearestFiles(item, files);
-      add('block', 'MISSING', null,
-        `필수 항목 「${item.label}」에 해당하는 파일이 없습니다.` +
-        (hint.length ? ` 비슷한 파일: ${hint.join(', ')}` : ''));
+      add('block', 'MISSING', null, { label: item.label, hint: nearestFiles(item, files) });
     }
   }
 
@@ -80,32 +78,26 @@ export function evaluatePacket({ files, checklist, limits = {} }) {
     const item = checklist.find((i) => i.label === itemLabel);
     const ext = extOf(file.name);
 
-    if (file.size === 0) {
-      add('block', 'EMPTY', file.name, '빈 파일(0바이트)입니다. 업로드해도 내용이 없습니다.');
-    }
+    if (file.size === 0) add('block', 'EMPTY', file.name);
     if (item && item.extensions && item.extensions.length && !item.extensions.includes(ext)) {
-      add('block', 'FORMAT', file.name,
-        `「${item.label}」은 ${item.extensions.map((e) => '.' + e).join(' / ')} 형식이어야 하는데 .${ext || '(확장자 없음)'}입니다.`);
+      add('block', 'FORMAT', file.name, { label: item.label, exts: item.extensions, ext });
     }
     if (item && item.maxMB && file.size > item.maxMB * MB) {
-      add('block', 'OVERSIZE', file.name,
-        `${(file.size / MB).toFixed(1)}MB — 「${item.label}」의 허용 용량 ${item.maxMB}MB를 넘습니다.`);
+      add('block', 'OVERSIZE', file.name, { mb: +(file.size / MB).toFixed(1), max: item.maxMB, label: item.label });
     }
-    if (!itemLabel) {
-      add('note', 'EXTRA', file.name, '체크리스트의 어느 항목에도 해당하지 않는 파일입니다.');
-    }
+    if (!itemLabel) add('note', 'EXTRA', file.name);
 
-    // Filename hygiene: these are the names that make a reviewer open the wrong file.
+    // Filename hygiene: the names that make a reviewer open the wrong file.
     const base = baseOf(file.name).replace(/\.[^.]+$/, '');
     const finals = (base.match(/final|최종/gi) || []).length;
-    if (finals >= 2) add('warn', 'NAME_VERSION', file.name, `이름에 '최종'이 ${finals}번 들어갑니다. 어느 것이 최종인지 파일명만으로는 알 수 없습니다.`);
+    if (finals >= 2) add('warn', 'NAME_VERSION', file.name, { n: finals });
     // '사본' on its own is a legitimate document word (신분증 사본); only the
     // markers left by a duplicate-and-rename gesture are worth flagging.
-    if (/\bcopy\b|복사본|복사 \d/i.test(base)) add('warn', 'NAME_COPY', file.name, `'복사본' 표시가 남아 있습니다.`);
-    if (/\(\d\)$/.test(base)) add('warn', 'NAME_COPY', file.name, `'(${base.match(/\((\d)\)$/)[1]})'가 붙은 이름입니다. 같은 파일의 다른 판일 가능성이 큽니다.`);
-    if (/\s{2,}/.test(base)) add('note', 'NAME_SPACE', file.name, '파일명에 연속 공백이 있습니다.');
-    if (/^\s|\s$/.test(base)) add('note', 'NAME_SPACE', file.name, '파일명 앞뒤에 공백이 있습니다.');
-    if (/[A-Za-z가-힣]{40,}/.test(base)) add('note', 'NAME_LONG', file.name, '파일명이 40자 이상입니다. 일부 접수 사이트에서 잘립니다.');
+    if (/\bcopy\b|복사본|복사 \d/i.test(base)) add('warn', 'NAME_COPY', file.name);
+    const paren = base.match(/\((\d)\)$/);
+    if (paren) add('warn', 'NAME_PAREN', file.name, { n: paren[1] });
+    if (/\s{2,}/.test(base) || /^\s|\s$/.test(base)) add('note', 'NAME_SPACE', file.name);
+    if (/[A-Za-z가-힣]{40,}/.test(base)) add('note', 'NAME_LONG', file.name);
   }
 
   // --- 4. Same bytes, two names -------------------------------------------
@@ -117,8 +109,7 @@ export function evaluatePacket({ files, checklist, limits = {} }) {
   }
   for (const [sha, names] of bySha) {
     if (names.length < 2) continue;
-    add('warn', 'DUPLICATE', names[0],
-      `같은 내용의 파일이 ${names.length}개 있습니다: ${names.join(', ')} (${sha.slice(0, 8)})`);
+    add('warn', 'DUPLICATE', names[0], { n: names.length, names, sha: sha.slice(0, 8) });
   }
 
   // --- 5. Two versions of the same document -------------------------------
@@ -132,16 +123,14 @@ export function evaluatePacket({ files, checklist, limits = {} }) {
   for (const [, group] of byBase) {
     const shas = new Set(group.map((f) => f.sha));
     if (group.length > 1 && shas.size > 1) {
-      add('warn', 'VERSION', group[0].name,
-        `이름이 비슷한 다른 판이 함께 들어 있습니다: ${group.map((f) => baseOf(f.name)).join(', ')} — 심사자는 하나만 읽습니다.`);
+      add('warn', 'VERSION', group[0].name, { names: group.map((f) => baseOf(f.name)) });
     }
   }
 
   // --- 6. Whole-packet limits ---------------------------------------------
   const totalBytes = files.reduce((n, f) => n + f.size, 0);
   if (limits.totalMB && totalBytes > limits.totalMB * MB) {
-    add('block', 'TOTAL_SIZE', null,
-      `전체 ${(totalBytes / MB).toFixed(1)}MB — 접수 한도 ${limits.totalMB}MB를 넘습니다.`);
+    add('block', 'TOTAL_SIZE', null, { mb: +(totalBytes / MB).toFixed(1), max: limits.totalMB });
   }
 
   const blocking = findings.filter((f) => f.severity === 'block').length;

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -16,99 +16,101 @@
     </div>
     <div>
       <h1>Packetproof</h1>
-      <p class="tagline">Seal what you submit.</p>
+      <p class="tagline" data-i18n="tagline">Seal what you submit.</p>
     </div>
   </div>
   <div class="brand-right">
-    <span class="pill" id="privacy-pill" title="파일은 이 브라우저 밖으로 나가지 않습니다">100% 로컬 · 업로드 없음</span>
+    <span class="pill" id="privacy-pill" data-i18n="privacy">100% local · no upload</span>
+    <button class="btn tiny lang" id="lang-btn" type="button">한국어</button>
     <a class="ghost-link" href="https://github.com/qkrrkdhzdl-arch/packetproof" target="_blank" rel="noopener">GitHub</a>
   </div>
 </header>
 
 <main>
   <section class="intro">
-    <p>
-      접수 사이트는 <em>제출한 뒤에</em> 알려 줍니다. 파일이 빠졌다고, 용량이 넘었다고, 같은 서류를 두 번 올렸다고.
-      Packetproof는 보내기 전에 폴더 하나를 검사합니다 — 그리고 <strong>봉인(seal)</strong>해서, 무엇을 언제 보냈는지 SHA-256으로 남깁니다.
-    </p>
+    <p data-i18n-html="intro"></p>
   </section>
 
   <div class="grid">
-    <!-- ── 왼쪽: 체크리스트 ────────────────────────────────── -->
+    <!-- checklist -->
     <section class="card" id="checklist-card">
       <div class="card-head">
-        <h2>1 · 무엇을 내야 하나</h2>
-        <select id="preset-select" aria-label="체크리스트 프리셋"></select>
+        <h2 data-i18n="step1">1 · what has to be inside</h2>
+        <select id="preset-select" aria-label="checklist preset"></select>
       </div>
-      <p class="hint">공고문에 적힌 제출물을 그대로 옮겨 적으세요. 항목 이름에 들어 있는 단어로 파일을 찾습니다.</p>
+      <p class="hint" data-i18n="step1hint"></p>
       <div class="table-wrap">
         <table class="checklist" id="checklist-table">
           <thead>
-            <tr><th>항목</th><th>필수</th><th>형식</th><th>최대</th><th></th></tr>
+            <tr>
+              <th data-i18n="colItem">item</th>
+              <th data-i18n="colReq">required</th>
+              <th data-i18n="colExt">formats</th>
+              <th data-i18n="colMax">max</th>
+              <th></th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
       <div class="row-actions">
-        <button class="btn small" id="add-item">+ 항목 추가</button>
-        <label class="total-field">전체 한도
+        <button class="btn small" id="add-item" data-i18n="addItem">+ item</button>
+        <label class="total-field"><span data-i18n="totalLimit">packet limit</span>
           <input type="number" id="total-mb" min="1" max="2000" step="1" /> MB
         </label>
       </div>
       <div class="packet-name">
-        <label>패킷 이름 <input type="text" id="packet-name" placeholder="예: 2026 청년지원사업 신청" /></label>
+        <label><span data-i18n="packetName">packet name</span>
+          <input type="text" id="packet-name" data-i18n-ph="packetPlaceholder" placeholder="e.g. 2026 Youth Grant application" />
+        </label>
       </div>
     </section>
 
-    <!-- ── 오른쪽: 파일 ─────────────────────────────────── -->
+    <!-- files -->
     <section class="card" id="files-card">
       <div class="card-head">
-        <h2>2 · 무엇을 보내려 하나</h2>
+        <h2 data-i18n="step2">2 · what you are sending</h2>
         <div class="row-actions">
-          <button class="btn small" id="sample-btn">예시 패킷 열기</button>
-          <button class="btn small ghost" id="clear-btn">비우기</button>
+          <button class="btn small" id="sample-btn" data-i18n="sample">Open sample packet</button>
+          <button class="btn small ghost" id="clear-btn" data-i18n="clear">Clear</button>
         </div>
       </div>
-      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="파일·폴더·ZIP을 끌어다 놓거나 눌러서 선택">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="drop files, a folder or a ZIP">
         <div class="dz-inner">
           <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5l5 5M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <strong>폴더 · 파일 · ZIP을 여기에</strong>
-          <span>끌어다 놓거나 눌러서 고르세요. 파일은 이 페이지를 떠나지 않습니다.</span>
+          <strong data-i18n="dzTitle">Folder · files · ZIP here</strong>
+          <span data-i18n="dzSub"></span>
         </div>
         <input type="file" id="file-input" multiple hidden />
         <input type="file" id="folder-input" webkitdirectory directory multiple hidden />
       </div>
       <div class="row-actions sub">
-        <button class="btn tiny" id="pick-files">파일 선택</button>
-        <button class="btn tiny" id="pick-folder">폴더 선택</button>
-        <label class="tiny-label">이전 봉인 불러오기 <input type="file" id="prev-manifest" accept="application/json" /></label>
+        <button class="btn tiny" id="pick-files" data-i18n="pickFiles">Choose files</button>
+        <button class="btn tiny" id="pick-folder" data-i18n="pickFolder">Choose folder</button>
+        <label class="tiny-label"><span data-i18n="prevSeal">Load a previous seal</span> <input type="file" id="prev-manifest" accept="application/json" /></label>
       </div>
       <div id="files-list" class="files"></div>
     </section>
   </div>
 
-  <!-- ── 결과 ─────────────────────────────────────────── -->
+  <!-- verdict -->
   <section class="card" id="result-card">
     <div class="card-head">
-      <h2>3 · 보내도 되나</h2>
-      <div class="verdict-badge" id="verdict" data-state="empty">검사 대기</div>
+      <h2 data-i18n="step3">3 · can you send it</h2>
+      <div class="verdict-badge" id="verdict" data-state="empty">waiting</div>
     </div>
     <div id="findings" class="findings"></div>
     <div class="seal-row">
-      <button class="btn primary" id="seal-btn" disabled>봉인하고 영수증 만들기</button>
-      <span class="hint" id="seal-hint">파일을 넣고 검사를 한 번 실행하면 봉인할 수 있습니다.</span>
+      <button class="btn primary" id="seal-btn" disabled data-i18n="seal">Seal it and get a receipt</button>
+      <span class="hint" id="seal-hint"></span>
     </div>
     <div id="receipt" class="receipt" hidden></div>
   </section>
 </main>
 
 <footer>
-  <p>
-    Packetproof는 정적 웹 앱입니다 — 서버도, 계정도, 업로드도 없습니다.
-    ZIP은 브라우저의 <code>DecompressionStream</code>으로 풀고, 해시는 <code>crypto.subtle</code>로 계산하며,
-    문서(docx · xlsx · pptx · hwpx)는 ZIP+XML을 직접 읽습니다.
-  </p>
-  <p class="muted">GenHacks 2026 제출작 · <a href="https://github.com/qkrrkdhzdl-arch/packetproof">소스</a> · MIT</p>
+  <p data-i18n-html="footer1"></p>
+  <p class="muted"><span data-i18n="footer2">GenHacks 2026 entry · source · MIT</span></p>
 </footer>
 
 <script type="module" src="app.js"></script>

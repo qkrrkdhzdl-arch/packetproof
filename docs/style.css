@@ -64,6 +64,8 @@ body::before {
   background: var(--ok-soft);
   white-space: nowrap;
 }
+.btn.lang { background: #fff; color: var(--ink-2); border-color: var(--rule); font-size: 12px; padding: 6px 10px; }
+.btn.lang:hover { border-color: var(--ink-3); color: var(--ink); }
 .ghost-link { color: var(--ink-2); font-size: 14px; text-decoration: none; border-bottom: 1px solid var(--rule); }
 .ghost-link:hover { border-color: var(--ink); }
 

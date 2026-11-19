@@ -7,6 +7,8 @@
  * after a resubmission: what changed since the version I sent yesterday?
  */
 
+import { findingText } from './i18n.js';
+
 export const SCHEMA = 'packetproof/1';
 
 export function buildManifest({ packet, checklist, files, matches, verdict, stats, findings, sealedAt }) {
@@ -34,7 +36,7 @@ export function buildManifest({ packet, checklist, files, matches, verdict, stat
     })),
     openIssues: (findings || [])
       .filter((f) => f.severity === 'block')
-      .map((f) => ({ code: f.code, file: f.file, message: f.message })),
+      .map((f) => ({ code: f.code, file: f.file, params: f.params || {} })),
   };
 }
 
@@ -72,36 +74,54 @@ export function diffManifests(prev, next) {
 }
 
 /** Human summary of a diff, for the receipt and for the demo. */
-export function describeDiff(d) {
+export function describeDiff(d, lang = 'en') {
   if (!d) return [];
-  const lines = [];
-  lines.push(`${d.unchanged}개 파일은 그대로입니다.`);
-  for (const c of d.changed) lines.push(`내용이 바뀐 파일: ${c.name} (${c.from.slice(0, 8)} → ${c.to.slice(0, 8)})`);
-  for (const a of d.added) lines.push(`새로 들어온 파일: ${a.name}`);
-  for (const r of d.removed) lines.push(`빠진 파일: ${r.name}`);
-  for (const r of d.renames) lines.push(`이름만 바뀐 파일: ${r.from} → ${r.to}`);
+  const L = lang === 'ko'
+    ? {
+        unchanged: (n) => `${n}개 파일은 그대로입니다.`,
+        changed: (name, a, b) => `내용이 바뀐 파일: ${name} (${a.slice(0, 8)} → ${b.slice(0, 8)})`,
+        added: (name) => `새로 들어온 파일: ${name}`,
+        removed: (name) => `빠진 파일: ${name}`,
+        renamed: (from, to) => `이름만 바뀐 파일: ${from} → ${to}`,
+        none: '이전 봉인과 달라진 점이 없습니다.',
+      }
+    : {
+        unchanged: (n) => `${n} file${n === 1 ? '' : 's'} unchanged.`,
+        changed: (name, a, b) => `Changed: ${name} (${a.slice(0, 8)} → ${b.slice(0, 8)})`,
+        added: (name) => `Added: ${name}`,
+        removed: (name) => `Removed: ${name}`,
+        renamed: (from, to) => `Renamed: ${from} → ${to}`,
+        none: 'Nothing has changed since the previous seal.',
+      };
+  const lines = [L.unchanged(d.unchanged)];
+  for (const c of d.changed) lines.push(L.changed(c.name, c.from, c.to));
+  for (const a of d.added) lines.push(L.added(a.name));
+  for (const r of d.removed) lines.push(L.removed(r.name));
+  for (const r of d.renames) lines.push(L.renamed(r.from, r.to));
   return lines;
 }
 
-export function receiptText(manifest, diff) {
+export function receiptText(manifest, diff, lang = 'en') {
   const date = manifest.sealedAt.replace('T', ' ').slice(0, 19) + ' UTC';
+  const ko = lang === 'ko';
   const lines = [
-    `PACKETPROOF — sealed packet receipt`,
-    `packet: ${manifest.packet}`,
-    `sealed: ${date}`,
-    `verdict: ${manifest.verdict.toUpperCase()}  (blocking ${manifest.counts.blocking}, warnings ${manifest.counts.warnings})`,
+    `PACKETPROOF — ${ko ? '봉인된 패킷 영수증' : 'sealed packet receipt'}`,
+    `${ko ? '패킷' : 'packet'}: ${manifest.packet}`,
+    `${ko ? '봉인' : 'sealed'}: ${date}`,
+    `${ko ? '판정' : 'verdict'}: ${manifest.verdict.toUpperCase()}  (${ko ? '막힘' : 'blocking'} ${manifest.counts.blocking}, ${ko ? '주의' : 'warnings'} ${manifest.counts.warnings})`,
     ``,
-    `files (${manifest.files.length}):`,
+    `${ko ? '파일' : 'files'} (${manifest.files.length}):`,
     ...manifest.files.map((f) => `  ${f.sha256.slice(0, 16)}  ${String(f.size).padStart(9)}  ${f.name}`),
     ``,
-    `checks applied: ${manifest.checklist.map((c) => c.label).join(' · ')}`,
+    `${ko ? '적용한 체크리스트' : 'checks applied'}: ${manifest.checklist.map((c) => c.label).join(' · ')}`,
   ];
   if (manifest.openIssues.length) {
-    lines.push('', 'open blocking issues:');
-    lines.push(...manifest.openIssues.map((i) => `  [${i.code}] ${i.file || 'packet'}: ${i.message}`));
+    lines.push('', ko ? '남은 막힘 항목:' : 'open blocking issues:');
+    lines.push(...manifest.openIssues.map((i) => `  [${i.code}] ${i.file || 'packet'}: ${findingText(lang, i.code, i.params || {})}`));
   }
   if (diff) {
-    lines.push('', 'since the previous seal:', ...describeDiff(diff).map((l) => `  ${l}`));
+    lines.push('', ko ? '이전 봉인 대비:' : 'since the previous seal:',
+      ...describeDiff(diff, lang).map((l) => `  ${l}`));
   }
   return lines.join('\n');
 }

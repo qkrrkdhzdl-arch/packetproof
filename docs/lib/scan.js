@@ -4,8 +4,8 @@
  * The checks are deliberately deterministic and explainable: an ID number is
  * only flagged when its check digit validates, a card number only when it
  * passes Luhn, and placeholders left in a form ("OOO", "000-0000-0000",
- * "[이름]") are reported as work still to do rather than as leaks. Nothing is
- * guessed and nothing leaves the page.
+ * "[이름]") are reported as work still to do rather than as leaks. Each finding
+ * is a code plus parameters; the sentence is built in i18n.js.
  */
 
 const RRN_WEIGHTS = [2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5];
@@ -53,29 +53,22 @@ const PLACEHOLDERS = [
   [/0\d{1,2}[-. ]?0{3,4}[-. ]?0{4}/g, 'placeholder phone number'],
   [/0{2,3}-\d{2,4}-\d{4}/g, 'placeholder number'],
   [/(X{6,}|x{6,})-\d{7}/g, 'placeholder ID number'],
-  [/\[(이름|성명|주소|연락처|날짜|소속)\]/g, 'unfilled field marker'],
+  [/\[(이름|성명|주소|연락처|날짜|소속|name|address|date)\]/gi, 'unfilled field marker'],
   [/(OOO|○○○|ㅇㅇㅇ)/g, 'unfilled name marker'],
   [/\bTODO\b|\bTBD\b|\bFIXME\b/g, 'unfinished work marker'],
-  [/(홍길동|김철수)/g, 'sample name left in the document'],
+  [/(홍길동|김철수|John Doe)/g, 'sample name left in the document'],
 ];
 
 /**
  * @param {string} text
- * @returns {Array<{severity:'block'|'warn'|'note', code:string, line:number, message:string, snippet:string}>}
+ * @returns {Array<{severity:'block'|'warn'|'note', code:string, line:number, params:object}>}
  */
 export function scanText(text) {
   const findings = [];
   if (!text) return findings;
-  const lines = text.split('\n');
 
-  const push = (severity, code, index, message, snippet) => {
-    findings.push({
-      severity,
-      code,
-      line: lineOf(text, index),
-      message,
-      snippet: mask(snippet.length > 60 ? snippet.slice(0, 60) + '…' : snippet),
-    });
+  const push = (severity, code, index, params = {}) => {
+    findings.push({ severity, code, line: lineOf(text, index), params });
   };
 
   // 1. Resident registration numbers. A government form needs one, so this is
@@ -84,45 +77,45 @@ export function scanText(text) {
   for (const m of text.matchAll(/(?<!\d)(\d{6})[-‐ ]?([1-8]\d{6})(?!\d)/g)) {
     const digits = m[1] + m[2];
     if (!rrnValid(digits)) continue;
-    push('warn', 'RRN', m.index, '주민등록번호로 보입니다 (검증 숫자 일치) — 이 서류에 꼭 필요한지 확인하세요', digits);
+    push('warn', 'RRN', m.index, { value: mask(digits) });
   }
 
   // 2. Payment card numbers.
   for (const m of text.matchAll(/(?<!\d)(\d[ -]?\d{3}[ -]?\d{4}[ -]?\d{4}(?:[ -]?\d{1,4})?)(?!\d)/g)) {
     const digits = m[1].replace(/[^0-9]/g, '');
     if (digits.length < 13 || !luhnValid(digits)) continue;
-    if (findings.some((f) => f.code === 'RRN' && Math.abs(f.line - lineOf(text, m.index)) < 1)) continue;
-    push('block', 'CARD', m.index, '카드번호로 보입니다 (Luhn 검증 통과) — 제출 서류에 들어갈 이유가 없습니다', digits);
+    if (findings.some((f) => f.code === 'RRN' && f.line === lineOf(text, m.index))) continue;
+    push('block', 'CARD', m.index, { value: mask(digits) });
   }
 
   // 3. Secrets.
   for (const [re, label] of SECRET_PATTERNS) {
     for (const m of text.matchAll(re)) {
-      push('block', 'SECRET', m.index, `${label} 형식의 값이 들어 있습니다`, m[0]);
+      push('block', 'SECRET', m.index, { label, value: mask(m[0]) });
     }
   }
 
-  // 4. Phone numbers: expected on a form, but flagged so the author decides.
+  // 4. Phone numbers: expected on a form, but shown so the author decides.
   for (const m of text.matchAll(/(?:\+?82[-. ]?)?0?1[016789][-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g)) {
-    push('note', 'PHONE', m.index, '연락처가 들어 있습니다 (본인 것이면 그대로 두세요)', m[0]);
+    push('note', 'PHONE', m.index, { value: mask(m[0]) });
   }
 
   // 5. Email addresses.
   for (const m of text.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {
-    push('note', 'EMAIL', m.index, '이메일 주소가 들어 있습니다', m[0]);
+    push('note', 'EMAIL', m.index, { value: m[0] });
   }
 
   // 6. Placeholders that mean "this form is not finished".
   for (const [re, label] of PLACEHOLDERS) {
     for (const m of text.matchAll(re)) {
-      push('warn', 'PLACEHOLDER', m.index, `${label} — 제출 전에 채워야 합니다`, m[0]);
+      push('warn', 'PLACEHOLDER', m.index, { label, value: mask(m[0]) });
     }
   }
 
-  // De-duplicate identical code+line+snippet (the same number twice on one line).
+  // De-duplicate identical code+line+value (the same number twice on one line).
   const seen = new Set();
   return findings.filter((f) => {
-    const key = `${f.code}:${f.line}:${f.snippet}:${f.message}`;
+    const key = `${f.code}:${f.line}:${f.params?.value || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

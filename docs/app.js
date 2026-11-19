@@ -4,23 +4,30 @@
  * Everything here runs against local data: dropped files are read with
  * FileReader, hashed with WebCrypto, unzipped with DecompressionStream, and
  * never sent anywhere. The UI is deliberately small: a checklist on the left,
- * the actual files on the right, and the verdict underneath.
+ * the actual files on the right, and the verdict underneath. Every string
+ * comes from i18n.js, so the same packet reads in English or Korean.
  */
 
 import { readZip } from './lib/zip.js';
-import { extractText, isScannable, extOf } from './lib/textract.js';
+import { extractText, isScannable } from './lib/textract.js';
 import { scanText } from './lib/scan.js';
 import { evaluatePacket, MB } from './lib/rules.js';
 import { sha256Hex } from './lib/hash.js';
 import { buildManifest, diffManifests, describeDiff, receiptText } from './lib/manifest.js';
 import { PRESETS, clonePreset } from './lib/presets.js';
 import { buildSamplePacket, buildFixFiles, SAMPLE_NAME } from './lib/samples.js';
+import { pickLang, UI, findingText } from './lib/i18n.js';
 
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 // Text scanning is skipped above this size: a 30MB scanned PDF would stall the
 // page, and the useful answer there is the size itself.
 const MAX_SCAN_BYTES = 5 * 1024 * 1024;
+
+let lang = pickLang(localStorage.getItem('packetproof:lang'));
+const T = () => UI[lang];
+const labelText = (item) => (item.label && typeof item.label === 'object' ? item.label[lang] || item.label.en : String(item.label));
 
 const state = {
   presetKey: 'grant',
@@ -34,21 +41,50 @@ const state = {
   busy: false,
 };
 
+/* ───────────────────────── language ───────────────────────── */
+
+function applyLanguage() {
+  document.documentElement.lang = lang;
+  for (const el of $$('[data-i18n]')) el.textContent = T()[el.dataset.i18n] ?? '';
+  for (const el of $$('[data-i18n-html]')) el.innerHTML = T()[el.dataset.i18nHtml] ?? '';
+  for (const el of $$('[data-i18n-ph]')) el.placeholder = T()[el.dataset.i18nPh] ?? '';
+  for (const el of $$('[data-i18n-title]')) el.title = T()[el.dataset.i18nTitle] ?? '';
+  const langBtn = $('#lang-btn');
+  if (langBtn) langBtn.textContent = T().langLabel;
+  $('#preset-select').setAttribute('aria-label', T().step1);
+  fillPresets();
+  renderChecklist();
+  renderFiles();
+  renderVerdict();
+  renderFindings();
+  if (state.manifest) renderReceipt();
+  updateSealHint();
+}
+
+function updateSealHint() {
+  if (!state.files.length) setSealHint(T().sealHintEmpty);
+  else if (state.result?.verdict === 'blocked') setSealHint(T().sealHintBlocked);
+  else setSealHint(T().sealHintReady);
+}
+
 /* ───────────────────────── checklist ───────────────────────── */
 
-function renderPresets() {
+function fillPresets() {
   const select = $('#preset-select');
   select.innerHTML = '';
   for (const [key, preset] of Object.entries(PRESETS)) {
     const opt = document.createElement('option');
     opt.value = key;
-    opt.textContent = preset.name;
+    opt.textContent = preset.labels[lang] || preset.labels.en;
     select.append(opt);
   }
   select.value = state.presetKey;
-  select.addEventListener('change', () => {
-    state.presetKey = select.value;
-    state.checklist = clonePreset(select.value);
+}
+
+function setupPresets() {
+  $('#preset-select').addEventListener('change', (e) => {
+    state.presetKey = e.target.value;
+    state.checklist = clonePreset(e.target.value);
     state.totalMB = state.checklist.totalMB || 50;
     $('#total-mb').value = state.totalMB;
     renderChecklist();
@@ -66,9 +102,11 @@ function renderChecklist() {
     const tdLabel = document.createElement('td');
     const label = document.createElement('input');
     label.type = 'text';
-    label.value = item.label;
-    label.placeholder = '항목 이름';
-    label.addEventListener('input', () => { item.label = label.value; runChecks(); });
+    label.value = labelText(item);
+    label.addEventListener('input', () => {
+      item.label = { en: label.value, ko: label.value };
+      runChecks();
+    });
     tdLabel.append(label);
 
     const tdReq = document.createElement('td');
@@ -76,7 +114,7 @@ function renderChecklist() {
     const req = document.createElement('input');
     req.type = 'checkbox';
     req.checked = !!item.required;
-    req.setAttribute('aria-label', `${item.label} 필수 여부`);
+    req.setAttribute('aria-label', labelText(item));
     req.addEventListener('change', () => { item.required = req.checked; runChecks(); });
     tdReq.append(req);
 
@@ -85,7 +123,6 @@ function renderChecklist() {
     ext.type = 'text';
     ext.className = 'ext';
     ext.value = (item.extensions || []).join(',');
-    ext.placeholder = 'pdf,hwp';
     ext.addEventListener('input', () => {
       item.extensions = ext.value.split(',').map((s) => s.trim().replace(/^\./, '')).filter(Boolean);
       runChecks();
@@ -98,7 +135,7 @@ function renderChecklist() {
     max.className = 'num';
     max.min = '1';
     max.value = item.maxMB || 10;
-    max.setAttribute('aria-label', `${item.label} 최대 용량(MB)`);
+    max.setAttribute('aria-label', `${labelText(item)} MB`);
     max.addEventListener('input', () => { item.maxMB = Number(max.value) || 0; runChecks(); });
     tdMax.append(max);
 
@@ -106,8 +143,7 @@ function renderChecklist() {
     const del = document.createElement('button');
     del.className = 'icon-btn';
     del.textContent = '×';
-    del.title = '항목 삭제';
-    del.setAttribute('aria-label', `${item.label} 삭제`);
+    del.setAttribute('aria-label', `remove ${labelText(item)}`);
     del.addEventListener('click', () => {
       state.checklist.items.splice(index, 1);
       renderChecklist();
@@ -122,7 +158,7 @@ function renderChecklist() {
 }
 
 function addItem() {
-  state.checklist.items.push({ label: '새 항목', required: false, extensions: ['pdf'], keywords: [], maxMB: 10 });
+  state.checklist.items.push({ label: { en: 'item', ko: '항목' }, required: false, extensions: ['pdf'], keywords: [], maxMB: 10 });
   renderChecklist();
   runChecks();
 }
@@ -135,7 +171,7 @@ function renderFiles() {
   if (!state.files.length) {
     const p = document.createElement('p');
     p.className = 'file-empty';
-    p.textContent = '아직 파일이 없습니다. 예시 패킷을 열어 보셔도 됩니다.';
+    p.textContent = T().filesEmpty;
     wrap.append(p);
     return;
   }
@@ -151,12 +187,12 @@ function renderFiles() {
     meta.textContent = `${formatSize(file.size)} · ${file.sha.slice(0, 8)}`;
     const tag = document.createElement('div');
     tag.className = 'ftag';
-    tag.textContent = file.itemLabel ? file.itemLabel : '미분류';
+    tag.textContent = file.itemLabel || T().unmatched;
     const del = document.createElement('button');
     del.className = 'icon-btn file-del';
     del.textContent = '×';
-    del.title = '이 파일을 패킷에서 빼기';
-    del.setAttribute('aria-label', `${file.name} 빼기`);
+    del.title = T().removeFile;
+    del.setAttribute('aria-label', `${T().removeFile}: ${file.name}`);
     del.addEventListener('click', () => removeFile(file.name));
     row.append(name, meta, tag, del);
     wrap.append(row);
@@ -166,6 +202,7 @@ function renderFiles() {
 function removeFile(name) {
   state.files = state.files.filter((f) => f.name !== name);
   state.manifest = null;
+  state.diff = null;
   $('#receipt').hidden = true;
   renderFiles();
   runChecks();
@@ -180,7 +217,7 @@ function formatSize(bytes) {
 async function ingestRaw(rawList) {
   if (state.busy) return;
   state.busy = true;
-  setSealHint('파일을 읽는 중…');
+  setSealHint(T().loadingFiles);
   const added = [];
   try {
     for (const raw of rawList) {
@@ -195,7 +232,7 @@ async function ingestRaw(rawList) {
           }
           continue;
         } catch (err) {
-          added.push({ name, bytes, note: `ZIP을 읽지 못했습니다: ${err.message}` });
+          added.push({ name, bytes, readError: err.message, zip: true });
           continue;
         }
       }
@@ -212,10 +249,11 @@ async function ingestRaw(rawList) {
         partial: false,
         scannable: isScannable(item.name),
         scan: [],
-        note: item.note || '',
+        skippedMB: 0,
+        readError: item.readError || '',
       };
       if (record.scannable && record.size > MAX_SCAN_BYTES) {
-        record.note = `${(record.size / MB).toFixed(1)}MB — 5MB가 넘어 내용 검사는 건너뛰었습니다.`;
+        record.skippedMB = +(record.size / MB).toFixed(1);
       } else if (record.scannable) {
         const extracted = await extractText(item.name, item.bytes);
         record.text = extracted.text || '';
@@ -233,11 +271,7 @@ async function ingestRaw(rawList) {
 
 function zipEntryName(zipName, entryName) {
   const stem = zipName.replace(/\.zip$/i, '');
-  // If the archive already has a single top folder, keep it; otherwise prefix
-  // with the archive name so the reader knows where the file came from.
-  const first = entryName.split('/')[0];
-  const hasCommonRoot = entryName.includes('/');
-  return hasCommonRoot || !stem ? entryName : `${stem}/${entryName}`.replace(`${stem}/`, '');
+  return entryName.includes('/') || !stem ? entryName : entryName;
 }
 
 function looksLikeZip(bytes) {
@@ -285,7 +319,7 @@ async function filesFromDataTransfer(dataTransfer) {
 /* ───────────────────────── checks ───────────────────────── */
 
 function runChecks() {
-  const checklist = state.checklist.items;
+  const checklist = state.checklist.items.map((i) => ({ ...i, label: labelText(i) }));
   const result = evaluatePacket({
     files: state.files.map((f) => ({ name: f.name, size: f.size, sha: f.sha })),
     checklist,
@@ -293,41 +327,36 @@ function runChecks() {
   });
   for (const file of state.files) file.itemLabel = result.matches[file.name] || '';
 
-  const scanFindings = [];
+  const contentFindings = [];
   for (const file of state.files) {
     for (const hit of file.scan) {
-      scanFindings.push({
+      contentFindings.push({
         severity: hit.severity,
         code: hit.code,
         file: file.name,
         line: hit.line,
-        message: `${hit.message}${hit.snippet ? ` — ${hit.snippet}` : ''}`,
+        params: hit.params,
       });
     }
-    if (file.note) scanFindings.push({ severity: 'note', code: 'UNREAD', file: file.name, message: file.note });
-    if (file.scannable && file.partial) {
-      scanFindings.push({
-        severity: 'note', code: 'PARTIAL', file: file.name,
-        message: '텍스트를 일부만 읽었습니다. 이 파일은 직접 한 번 열어 확인하세요.',
-      });
-    }
-    if (file.scannable && !file.text && !file.note) {
-      scanFindings.push({
-        severity: 'note', code: 'NODOC', file: file.name,
-        message: '안에서 글자를 찾지 못했습니다 (스캔 이미지 PDF일 수 있습니다).',
-      });
+    if (file.readError) {
+      contentFindings.push({ severity: 'note', code: 'UNREAD', file: file.name, params: { text: file.readError } });
+    } else if (file.skippedMB) {
+      contentFindings.push({ severity: 'note', code: 'UNREAD', file: file.name, params: { text: T().sizeSkipped(file.skippedMB) } });
+    } else if (file.scannable && file.partial) {
+      contentFindings.push({ severity: 'note', code: 'PARTIAL', file: file.name, params: {} });
+    } else if (file.scannable && !file.text) {
+      contentFindings.push({ severity: 'note', code: 'NODOC', file: file.name, params: {} });
     }
   }
 
-  const blocking = result.findings.filter((f) => f.severity === 'block').length
-    + scanFindings.filter((f) => f.severity === 'block').length;
-  const warnings = result.findings.filter((f) => f.severity === 'warn').length
-    + scanFindings.filter((f) => f.severity === 'warn').length;
+  const all = [...result.findings, ...contentFindings];
+  const blocking = all.filter((f) => f.severity === 'block').length;
+  const warnings = all.filter((f) => f.severity === 'warn').length;
   const verdict = blocking ? 'blocked' : warnings ? 'warnings' : state.files.length ? 'ready' : 'empty';
 
   state.result = {
     ...result,
-    findings: [...result.findings, ...scanFindings],
+    findings: all,
     stats: { ...result.stats, blocking, warnings, files: state.files.length },
     verdict,
   };
@@ -335,22 +364,21 @@ function runChecks() {
   renderFindings();
   renderFiles();
   $('#seal-btn').disabled = !state.files.length;
-  setSealHint(state.files.length
-    ? (blocking ? '막는 문제가 남아 있습니다. 그래도 봉인하면 그대로 기록됩니다.' : '봉인하면 파일별 SHA-256이 담긴 영수증이 만들어집니다.')
-    : '파일을 넣고 검사를 한 번 실행하면 봉인할 수 있습니다.');
+  updateSealHint();
 }
 
 function renderVerdict() {
   const badge = $('#verdict');
   const v = state.result?.verdict || 'empty';
-  const labels = {
-    empty: '검사 대기',
-    ready: '보내도 됩니다',
-    warnings: `주의 ${state.result.stats.warnings}건`,
-    blocked: `막힘 ${state.result.stats.blocking}건`,
-  };
+  const n = v === 'warnings' ? state.result.stats.warnings : v === 'blocked' ? state.result.stats.blocking : 0;
   badge.dataset.state = v;
-  badge.textContent = labels[v];
+  badge.textContent = v === 'warnings'
+    ? T().verdictWarnings(n)
+    : v === 'blocked'
+      ? T().verdictBlocked(n)
+      : v === 'ready'
+        ? T().verdictReady
+        : T().verdictEmpty;
 }
 
 function renderFindings() {
@@ -362,12 +390,16 @@ function renderFindings() {
   if (!ordered.length && state.files.length) {
     const ok = document.createElement('div');
     ok.className = 'all-clear';
-    ok.innerHTML = `<strong>막는 문제가 없습니다.</strong><span>필수 항목이 모두 있고, 형식·용량·중복에서 걸린 것이 없습니다.</span>`;
+    const strong = document.createElement('strong');
+    strong.textContent = T().allClearTitle;
+    const span = document.createElement('span');
+    span.textContent = T().allClearBody;
+    ok.append(strong, span);
     wrap.append(ok);
   } else if (!state.files.length) {
     const p = document.createElement('p');
     p.className = 'file-empty';
-    p.textContent = '체크리스트를 확인하고 파일을 넣으면 결과가 여기에 나옵니다.';
+    p.textContent = T().allClearEmpty;
     wrap.append(p);
   }
 
@@ -376,16 +408,16 @@ function renderFindings() {
     row.className = `finding ${f.severity}`;
     const sev = document.createElement('div');
     sev.className = 'sev';
-    sev.textContent = { block: '막힘', warn: '주의', note: '참고' }[f.severity] || f.severity;
+    sev.textContent = { block: T().severityBlock, warn: T().severityWarn, note: T().severityNote }[f.severity] || f.severity;
     const body = document.createElement('div');
     const what = document.createElement('div');
     what.className = 'what';
-    what.textContent = f.message;
+    what.textContent = findingText(lang, f.code, f.params || {});
     body.append(what);
     if (f.file || f.line) {
       const where = document.createElement('div');
       where.className = 'where';
-      where.textContent = [f.file, f.line ? `${f.line}행` : ''].filter(Boolean).join(' · ');
+      where.textContent = [f.file, f.line ? `${f.line}` : ''].filter(Boolean).join(' · ');
       body.append(where);
     }
     row.append(sev, body);
@@ -400,8 +432,8 @@ const severityRank = (s) => ({ block: 0, warn: 1, note: 2 }[s] ?? 3);
 function seal() {
   if (!state.files.length) return;
   const manifest = buildManifest({
-    packet: $('#packet-name').value || state.checklist.name || 'untitled-packet',
-    checklist: state.checklist.items,
+    packet: $('#packet-name').value || PRESETS[state.presetKey]?.labels[lang] || 'untitled-packet',
+    checklist: state.checklist.items.map((i) => ({ ...i, label: labelText(i) })),
     files: state.files,
     matches: state.result.matches,
     verdict: state.result.verdict,
@@ -420,7 +452,6 @@ function seal() {
   state.diff = previous ? diffManifests(previous, manifest) : null;
   state.manifest = manifest;
   try { localStorage.setItem(key, JSON.stringify(manifest)); } catch { /* ignore */ }
-
   renderReceipt();
 }
 
@@ -430,26 +461,30 @@ function renderReceipt() {
   box.innerHTML = '';
 
   const head = document.createElement('h3');
-  head.textContent = 'Sealed receipt';
+  head.textContent = T().receiptTitle;
   box.append(head);
 
   const pre = document.createElement('pre');
   pre.id = 'receipt-text';
-  pre.textContent = receiptText(state.manifest, state.diff);
+  pre.textContent = receiptText(state.manifest, state.diff, lang);
   box.append(pre);
 
   const stamp = document.createElement('div');
   stamp.className = 'stamp';
-  stamp.textContent = state.manifest.verdict === 'ready' ? 'SEALED · READY' : `SEALED · ${state.manifest.verdict.toUpperCase()}`;
+  stamp.textContent = state.manifest.verdict === 'ready'
+    ? T().stampReady
+    : state.manifest.verdict === 'blocked'
+      ? T().stampBlocked
+      : T().stampWarn;
   box.append(stamp);
 
   if (state.diff) {
     const diff = document.createElement('div');
     diff.className = 'diff';
     const title = document.createElement('strong');
-    title.textContent = '이전 봉인과 비교';
+    title.textContent = T().vsPrev;
     const ul = document.createElement('ul');
-    for (const line of describeDiff(state.diff)) {
+    for (const line of describeDiff(state.diff, lang)) {
       const li = document.createElement('li');
       li.textContent = line;
       ul.append(li);
@@ -464,7 +499,7 @@ function renderReceipt() {
 
   const dl = document.createElement('button');
   dl.className = 'btn tiny';
-  dl.textContent = 'manifest.json 내려받기';
+  dl.textContent = T().download;
   dl.addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(state.manifest, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -476,11 +511,11 @@ function renderReceipt() {
 
   const copy = document.createElement('button');
   copy.className = 'btn tiny';
-  copy.textContent = '영수증 복사';
+  copy.textContent = T().copy;
   copy.addEventListener('click', async () => {
     await navigator.clipboard.writeText($('#receipt-text').textContent);
-    copy.textContent = '복사됨';
-    setTimeout(() => { copy.textContent = '영수증 복사'; }, 1500);
+    copy.textContent = T().copied;
+    setTimeout(() => { copy.textContent = T().copy; }, 1500);
   });
 
   actions.append(dl, copy);
@@ -541,25 +576,30 @@ function setupButtons() {
     state.totalMB = Number(e.target.value) || 0;
     runChecks();
   });
-  $('#packet-name').addEventListener('input', () => { /* used at seal time */ });
   $('#sample-btn').addEventListener('click', async () => {
     state.files = [];
     renderFiles();
-    setSealHint('예시 패킷을 만드는 중…');
+    setSealHint(T().buildingSample);
     const zip = await buildSamplePacket();
     await ingestRaw([{ name: SAMPLE_NAME, bytes: zip }]);
     addDemoFixButton();
-    setSealHint('예시 패킷은 일부러 틀린 파일을 담고 있습니다. 빠진 서류를 넣어 보세요.');
+    setSealHint(T().sampleHint);
   });
   $('#prev-manifest').addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       state.prevManifest = JSON.parse(await file.text());
-      setSealHint(`이전 봉인(${state.prevManifest.sealedAt.slice(0, 10)})을 불러왔습니다. 봉인하면 차이를 보여 줍니다.`);
-    } catch (err) {
-      setSealHint('manifest.json을 읽지 못했습니다.');
+      setSealHint(T().prevLoaded(state.prevManifest.sealedAt.slice(0, 10)));
+    } catch {
+      setSealHint(T().readingFailed);
     }
+  });
+  $('#lang-btn').addEventListener('click', () => {
+    lang = lang === 'en' ? 'ko' : 'en';
+    try { localStorage.setItem('packetproof:lang', lang); } catch { /* ignore */ }
+    applyLanguage();
+    runChecks();
   });
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
@@ -574,26 +614,26 @@ function addDemoFixButton() {
   const btn = document.createElement('button');
   btn.className = 'btn tiny';
   btn.id = 'fix-btn';
-  btn.textContent = '빠진 서류 3장 추가 (예시)';
+  btn.textContent = T().fixing;
   btn.addEventListener('click', async () => {
     await ingestRaw(await buildFixFiles());
     btn.remove();
   });
-  $('#dropzone').after(btn);
-  const actions = document.querySelector('.row-actions.sub');
-  if (actions) actions.append(btn);
+  document.querySelector('.row-actions.sub')?.append(btn);
 }
 
 /* ───────────────────────── boot ───────────────────────── */
 
 function boot() {
-  renderPresets();
+  applyLanguage();
+  setupPresets();
   renderChecklist();
   setupDropzone();
   setupButtons();
   renderFiles();
   runChecks();
-  window.__packetproof = { state, runChecks, seal, ingestRaw, removeFile };
+  applyLanguage();
+  window.__packetproof = { state, runChecks, seal, ingestRaw, removeFile, get lang() { return lang; } };
 }
 
 boot();

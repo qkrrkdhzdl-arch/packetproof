@@ -46,6 +46,10 @@ Reported values are masked before rendering (`900*******568`): the finding has t
 
 PDF is best-effort by nature: a CID-font PDF prints glyph ids rather than text, and a scanned PDF has no text at all. The result carries a `partial` flag, and the UI says "I only read part of this" instead of "clean". A tool that reports success it cannot verify is worse than no tool.
 
+## Language
+
+Findings are codes with parameters (`MISSING {label, hint}`, `OVERSIZE {mb, max, label}`, `RRN {value}`), never finished sentences, and `i18n.js` holds the English and Korean wording for each. The rule engine and the string table can change independently, and a test asserts that both languages cover the same set of codes and interface keys — so a new check cannot ship with a missing translation.
+
 ## The manifest
 
 ```json

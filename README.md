@@ -1,6 +1,6 @@
 # Packetproof
 
-**Seal what you submit.** Drop the folder you are about to upload. Packetproof tells you what the portal will reject — before you send it — and leaves a SHA-256 receipt of exactly what went out.
+**Seal what you submit.** Drop the folder you are about to upload. Packetproof tells you what the portal will reject — before you send it — and leaves a SHA-256 receipt of exactly what went out. English and Korean, in the same page.
 
 Live: **https://qkrrkdhzdl-arch.github.io/packetproof/** · Tests: **/tests.html** · GenHacks 2026 · Track: *AI, Agentic Systems, Cybersecurity & Dev Tools*
 
@@ -36,6 +36,10 @@ I have sent several hundred applications in the last year: grants, contests, hac
 
 ![The sealed receipt](docs/shots/04-receipt.png)
 
+## Two languages, one engine
+
+The interface, the findings and the receipt read in English or Korean (the toggle is in the header; the default follows the browser). The checks never produce a finished sentence — a finding is a code plus parameters, and `docs/lib/i18n.js` turns it into words — so adding a language is adding a dictionary, not touching the engine. That matters here: the person preparing a Korean grant packet and the reviewer reading an English report are looking at the same verdict.
+
 ## Privacy by construction
 
 There is no server, no account and no upload. Files are read with `FileReader`, hashed with `crypto.subtle`, unzipped with the platform's `DecompressionStream`, and compared in memory. The page makes **zero requests after load** — the smoke test asserts this, and you can watch it in the Network tab while the sample packet runs.
@@ -62,7 +66,8 @@ docs/          (published by GitHub Pages)
   lib/rules.js     checklist matching and packet checks
   lib/manifest.js  seal and diff
   lib/samples.js   the in-browser sample packet
-  tests.html / tests.js   53 assertions
+  lib/i18n.js      every string, in English and Korean
+  tests.html / tests.js   60 assertions
 tools/
   run_tests.py   runs the suite in headless Chromium
   smoke.py       walks the demo path and writes docs/shots/
@@ -81,7 +86,7 @@ Press **예시 패킷 열기** to load the sample: seven files that carry six re
 Tests:
 
 ```bash
-python3 tools/run_tests.py     # 53/53 assertions in a real browser
+python3 tools/run_tests.py     # 60/60 assertions in a real browser
 python3 tools/smoke.py         # UI path + screenshots + "no offsite requests" check
 ```
 
@@ -90,6 +95,7 @@ python3 tools/smoke.py         # UI path + screenshots + "no offsite requests" c
 - **It does not read scanned images.** A PDF that is one big JPEG yields no text; the UI says so instead of claiming the packet is clean.
 - **It skips text scanning above 5MB.** The size itself is the finding there.
 - **It does not edit your files.** It tells you what to fix; you fix it and drop the folder again.
+- **The interface is bilingual, the checklist is not translated for you.** Items you type are kept as you typed them.
 - **It cannot know your announcement.** The checklist is a starting point — the tool is only as good as the list you give it, which is why the list is editable inline.
 - **Korean RRN check digits follow the resident-number formula.** Foreigner registration numbers use a different rule and may show up as an unvalidated 13-digit number, not a finding.
 

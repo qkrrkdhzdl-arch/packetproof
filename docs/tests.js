@@ -11,6 +11,7 @@ import { scanText, rrnValid, luhnValid, mask } from './lib/scan.js';
 import { evaluatePacket, norm } from './lib/rules.js';
 import { sha256Hex } from './lib/hash.js';
 import { buildManifest, diffManifests } from './lib/manifest.js';
+import { FINDING, UI, findingText } from './lib/i18n.js';
 import { makeDocx, makePdf } from './lib/samples.js';
 
 const results = [];
@@ -94,7 +95,7 @@ async function run() {
     ok('scan: RRN flagged for the author to judge', found.some((f) => f.code === 'RRN' && f.severity === 'warn'));
     ok('scan: card flagged as blocking', codes.includes('CARD'));
     ok('scan: line numbers reported', found.find((f) => f.code === 'RRN').line === 1 && found.find((f) => f.code === 'CARD').line === 2);
-    ok('scan: snippet is masked', !found.find((f) => f.code === 'RRN').snippet.includes('1234568'));
+    ok('scan: the value is masked', !found.find((f) => f.code === 'RRN').params.value.includes('1234568'), found.find((f) => f.code === 'RRN').params.value);
 
     const clean = scanText('이 문서에는 개인정보가 없습니다. 담당자에게 문의하세요.');
     eq('scan: clean text has no findings', clean.length, 0);
@@ -119,7 +120,7 @@ async function run() {
       { name: '메모.txt', size: 20, sha: 'b'.repeat(64) },
     ];
     const r1 = evaluatePacket({ files, checklist });
-    ok('rules: missing required item blocks', r1.findings.some((f) => f.code === 'MISSING' && f.message.includes('동의서')));
+    ok('rules: missing required item blocks', r1.findings.some((f) => f.code === 'MISSING' && f.params.label.includes('동의서')));
     ok('rules: unmatched file noted', r1.findings.some((f) => f.code === 'EXTRA' && f.file === '메모.txt'));
     eq('rules: verdict blocked', r1.verdict, 'blocked');
     eq('rules: match recorded', r1.matches['지원서_박가온.txt'], '지원서');
@@ -158,7 +159,7 @@ async function run() {
       checklist,
     });
     ok('rules: identical bytes under two names flagged', r5.findings.some((f) => f.code === 'DUPLICATE'));
-    ok('rules: copy-style name flagged', r5.findings.some((f) => f.code === 'NAME_COPY'));
+    ok('rules: "(1)" copy-style name flagged', r5.findings.some((f) => f.code === 'NAME_PAREN'));
 
     const r6 = evaluatePacket({
       files: [
@@ -218,6 +219,27 @@ async function run() {
     const d2 = diffManifests(m1, m3);
     eq('diff: rename recognised', d2.renames.map((r) => `${r.from}>${r.to}`), ['지원서.pdf>지원서_최종.pdf']);
     eq('diff: rename leaves the genuinely dropped file listed', d2.removed.map((r) => r.name), ['사진.png']);
+  }
+
+  /* ── i18n ──────────────────────────────────────────── */
+  {
+    const en = findingText('en', 'MISSING', { label: 'Privacy consent', hint: ['동의서_서명.pdf'] });
+    const ko = findingText('ko', 'MISSING', { label: '개인정보 동의서', hint: [] });
+    ok('i18n: english sentence mentions the item', en.includes('Privacy consent') && en.includes('no matching file'), en);
+    ok('i18n: korean sentence mentions the item', ko.includes('개인정보 동의서') && ko.includes('없습니다'), ko);
+    ok('i18n: masked value survives translation', findingText('en', 'RRN', { value: '900*******568' }).includes('900*******568'));
+    ok('i18n: english hint list is joined', findingText('en', 'MISSING', { label: 'x', hint: ['a.pdf', 'b.pdf'] }).includes('a.pdf, b.pdf'));
+
+    const codesEn = Object.keys(FINDING.en).sort();
+    const codesKo = Object.keys(FINDING.ko).sort();
+    eq('i18n: both languages cover the same finding codes', codesKo, codesEn);
+    const uiEn = Object.keys(UI.en).sort();
+    const uiKo = Object.keys(UI.ko).sort();
+    eq('i18n: both languages cover the same interface keys', uiKo, uiEn);
+    ok('i18n: every finding code renders in both languages', codesEn.every((c) => {
+      const out = findingText('en', c, { label: 'l', value: 'v', n: 2, names: ['a'], mb: 1, max: 2, exts: ['pdf'], ext: 'txt', sha: 'abc', text: 't' });
+      return typeof out === 'string' && out.length > 0 && !out.includes('undefined');
+    }));
   }
 
   /* ── end to end ────────────────────────────────────── */
